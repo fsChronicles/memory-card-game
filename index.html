@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07050f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="./manifest.json">
+  <title>Memory Card Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* ─── 기본 리셋 ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ─── CSS 변수 ─── */
+    :root {
+      --bg:        #07050f;
+      --surface:   #110d1f;
+      --card-back: #1a1335;
+      --card-face: #0d0921;
+      --neon-a:    #00f5d4;   /* 민트 */
+      --neon-b:    #f700ff;   /* 마젠타 */
+      --neon-c:    #ffe600;   /* 옐로 */
+      --matched:   #00f5d4;
+      --danger:    #ff3a5c;
+      --text:      #d8d0f0;
+      --muted:     #6b5f8a;
+    }
+
+    /* ─── 배경 그리드 패턴 ─── */
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(0,245,212,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,212,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px 40px;
+      gap: 18px;
+    }
+
+    /* ─── 제목 ─── */
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1.2rem, 4vw, 2rem);
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      color: var(--neon-a);
+      text-shadow: 0 0 12px var(--neon-a), 0 0 30px rgba(0,245,212,.3);
+      text-transform: uppercase;
+    }
+
+    /* ─── 정보 바 ─── */
+    #info-bar {
+      display: flex;
+      gap: 20px;
+      background: var(--surface);
+      border: 1px solid rgba(0,245,212,.15);
+      border-radius: 14px;
+      padding: 10px 24px;
+      font-size: .9rem;
+      color: var(--muted);
+      letter-spacing: .04em;
+    }
+    #info-bar .item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    #info-bar .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+    #info-bar .value {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    #timer        { color: var(--neon-a); }
+    #timer.warn   { color: var(--danger); animation: blink .6s step-end infinite; }
+    @keyframes blink { 50% { opacity: .3; } }
+
+    /* ─── 상태 메시지 ─── */
+    #status {
+      font-size: .9rem;
+      color: var(--muted);
+      min-height: 1.2em;
+      letter-spacing: .03em;
+    }
+
+    /* ─── 그리드 래퍼 (미리보기 카운트다운 포지셔닝) ─── */
+    #grid-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    /* ─── 6×6 그리드 ─── */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 7px;
+      width: 100%;
+    }
+
+    /* ─── 카드 ─── */
+    .card {
+      aspect-ratio: 1;
+      perspective: 700px;
+      cursor: pointer;
+    }
+    .card-inner {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateY(180deg);   /* 기본: 뒷면 */
+      transition: transform .42s cubic-bezier(.4,0,.2,1);
+    }
+    .card.open   .card-inner { transform: rotateY(0deg); }
+    .card.matched .card-inner { transform: rotateY(0deg); }
+
+    .card-face {
+      position: absolute;
+      inset: 0;
+      backface-visibility: hidden;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 앞면 — 이모지 */
+    .card-front {
+      background: var(--card-face);
+      border: 1.5px solid rgba(0,245,212,.18);
+      font-size: clamp(1.3rem, 4vw, 2rem);
+    }
+
+    /* 뒷면 — ? */
+    .card-back {
+      background: var(--card-back);
+      border: 1.5px solid rgba(247,0,255,.25);
+      transform: rotateY(180deg);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1rem;
+      color: rgba(247,0,255,.45);
+      box-shadow: inset 0 0 18px rgba(247,0,255,.07);
+    }
+
+    /* 매칭 성공 */
+    .card.matched .card-front {
+      background: rgba(0,245,212,.08);
+      border-color: var(--matched);
+      box-shadow: 0 0 10px rgba(0,245,212,.25);
+    }
+
+    /* 호버 */
+    .card:not(.open):not(.matched):hover .card-back {
+      border-color: rgba(247,0,255,.6);
+      box-shadow: 0 0 14px rgba(247,0,255,.2);
+    }
+
+    /* ─── 미리보기 카운트다운 (그리드 밖) ─── */
+    #preview-count {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(2rem, 8vw, 3.2rem);
+      font-weight: 900;
+      color: var(--neon-a);
+      text-shadow: 0 0 16px var(--neon-a), 0 0 40px rgba(0,245,212,.4);
+      line-height: 1;
+      min-height: 1.2em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    #preview-count.hidden { visibility: hidden; }
+    #preview-count span {
+      animation: pop .4s cubic-bezier(.175,.885,.32,1.275);
+    }
+    @keyframes pop {
+      from { transform: scale(.4); opacity: 0; }
+      to   { transform: scale(1);  opacity: 1; }
+    }
+
+    /* ─── 새 게임 버튼 ─── */
+    #btn-new {
+      font-family: 'Orbitron', sans-serif;
+      font-size: .85rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 11px 28px;
+      background: transparent;
+      color: var(--neon-b);
+      border: 2px solid var(--neon-b);
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(247,0,255,.2);
+      transition: background .2s, box-shadow .2s, transform .1s;
+    }
+    #btn-new:hover {
+      background: rgba(247,0,255,.12);
+      box-shadow: 0 0 24px rgba(247,0,255,.4);
+    }
+    #btn-new:active { transform: scale(.96); }
+
+    /* ─── 게임 오버 / 클리어 배너 ─── */
+    #banner {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1rem, 3.5vw, 1.4rem);
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-align: center;
+      min-height: 1.6em;
+    }
+    #banner.clear    { color: var(--neon-a); text-shadow: 0 0 12px var(--neon-a); }
+    #banner.gameover { color: var(--danger);  text-shadow: 0 0 12px var(--danger); }
+
+    /* ─── 시작 화면 오버레이 ─── */
+    #start-screen {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 5, 15, 0.96);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      z-index: 100;
+    }
+    #start-screen.hidden { display: none; }
+    #start-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1.6rem, 6vw, 2.6rem);
+      font-weight: 900;
+      color: var(--neon-a);
+      text-shadow: 0 0 16px var(--neon-a), 0 0 40px rgba(0,245,212,.4);
+      letter-spacing: .1em;
+      text-align: center;
+    }
+    #start-desc {
+      font-size: .95rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.8;
+      letter-spacing: .03em;
+    }
+    #btn-start {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      padding: 14px 48px;
+      background: transparent;
+      color: var(--neon-a);
+      border: 2px solid var(--neon-a);
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 0 18px rgba(0,245,212,.3);
+      transition: background .2s, box-shadow .2s, transform .1s;
+    }
+    #btn-start:hover {
+      background: rgba(0,245,212,.1);
+      box-shadow: 0 0 32px rgba(0,245,212,.5);
+    }
+    #btn-start:active { transform: scale(.96); }
+  </style>
+</head>
+<body>
+
+  <!-- 시작 화면 오버레이 -->
+  <div id="start-screen">
+    <div id="start-title">🃏 Memory Card</div>
+    <div id="start-desc">
+      36장의 카드 중 18쌍을 찾아라<br>
+      시작 후 5초간 카드를 미리 볼 수 있음<br>
+      제한 시간 3분
+    </div>
+    <button id="btn-start" onclick="startGame()">▶ START</button>
+  </div>
+
+  <h1>🃏 Memory Card</h1>
+
+  <!-- 정보 바 -->
+  <div id="info-bar">
+    <div class="item">
+      <span class="label">Time</span>
+      <span class="value" id="timer">03:00</span>
+    </div>
+    <div class="item">
+      <span class="label">Tries</span>
+      <span class="value" id="moves">0</span>
+    </div>
+    <div class="item">
+      <span class="label">Matched</span>
+      <span class="value" id="matched">0 / 18</span>
+    </div>
+  </div>
+
+  <div id="status">게임 준비 중...</div>
+
+  <!-- 미리보기 카운트다운 (그리드 밖) -->
+  <div id="preview-count" class="hidden"><span>5</span></div>
+
+  <!-- 그리드 -->
+  <div id="grid-wrap">
+    <div id="grid"></div>
+  </div>
+
+  <!-- 결과 배너 -->
+  <div id="banner"></div>
+
+  <button id="btn-new" onclick="initGame()">↺ 새 게임</button>
+
+  <script>
+    // ────────────────────────────────────────────
+    // 설정
+    // ────────────────────────────────────────────
+    const EMOJIS = [
+      '🍎','🍊','🍋','🍇','🍓','🍒',
+      '🥝','🍑','🍍','🥭','🍌','🫐',
+      '🍉','🥥','🍈','🫒','🍄','🌽'
+    ]; // 18종 × 2 = 36장
+    const PREVIEW_SEC = 5;
+    const GAME_SEC    = 180; // 3분
+
+    // ────────────────────────────────────────────
+    // 상태 변수
+    // ────────────────────────────────────────────
+    let flippedCards  = [];
+    let matchedPairs  = 0;
+    let moves         = 0;
+    let timeLeft      = GAME_SEC;
+    let gameActive    = false;
+    let locked        = false;
+    let gameTimer     = null;
+    let previewTimer  = null;
+
+    // ────────────────────────────────────────────
+    // 유틸
+    // ────────────────────────────────────────────
+
+    /** Fisher-Yates 셔플 */
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function fmt(sec) {
+      const m = String(Math.floor(sec / 60)).padStart(2, '0');
+      const s = String(sec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    // ────────────────────────────────────────────
+    // UI 업데이트
+    // ────────────────────────────────────────────
+    function updateTimer() {
+      const el = document.getElementById('timer');
+      el.textContent = fmt(timeLeft);
+      el.classList.toggle('warn', timeLeft <= 30);
+    }
+
+    function updateMoves()   { document.getElementById('moves').textContent   = moves; }
+    function updateMatched() { document.getElementById('matched').textContent = `${matchedPairs} / 18`; }
+    function setStatus(msg)  { document.getElementById('status').textContent  = msg; }
+
+    function setBanner(msg, cls) {
+      const el = document.getElementById('banner');
+      el.textContent  = msg;
+      el.className    = cls || '';
+    }
+
+    function showPreviewCount(n) {
+      const el = document.getElementById('preview-count');
+      el.classList.remove('hidden');
+      // 숫자를 새 span으로 교체해 애니메이션 재실행
+      el.innerHTML = `<span>${n}</span>`;
+    }
+
+    function hidePreviewCount() {
+      document.getElementById('preview-count').classList.add('hidden');
+    }
+
+    // ────────────────────────────────────────────
+    // 게임 초기화
+    // ────────────────────────────────────────────
+    function initGame() {
+      // 기존 타이머 정리
+      clearInterval(gameTimer);
+      clearInterval(previewTimer);
+
+      // 상태 초기화
+      flippedCards = [];
+      matchedPairs = 0;
+      moves        = 0;
+      timeLeft     = GAME_SEC;
+      gameActive   = false;
+      locked       = true;
+
+      // UI 초기화
+      updateTimer();
+      updateMoves();
+      updateMatched();
+      setStatus('카드를 잘 기억하세요!');
+      setBanner('');
+
+      // 카드 생성 (앞면 오픈 상태 — 미리보기)
+      const pairs   = [...EMOJIS, ...EMOJIS];
+      const shuffled = shuffle(pairs);
+      const grid    = document.getElementById('grid');
+      grid.innerHTML = '';
+
+      shuffled.forEach((emoji) => {
+        const card = document.createElement('div');
+        card.className = 'card open'; // 미리보기: 앞면
+        card.dataset.emoji = emoji;
+        card.innerHTML = `
+          <div class="card-inner">
+            <div class="card-face card-front">${emoji}</div>
+            <div class="card-face card-back">?</div>
+          </div>
+        `;
+        card.addEventListener('click', onCardClick);
+        grid.appendChild(card);
+      });
+
+      // 오버레이 미리보기 카운트다운
+      let count = PREVIEW_SEC;
+      showPreviewCount(count);
+
+      previewTimer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          showPreviewCount(count);
+        } else {
+          clearInterval(previewTimer);
+          hidePreviewCount();
+
+          // 모든 카드 뒤집기
+          document.querySelectorAll('.card').forEach(c => c.classList.remove('open'));
+
+          // 게임 시작
+          locked     = false;
+          gameActive = true;
+          setStatus('게임 진행 중 — 짝을 찾아라!');
+          startGameTimer();
+        }
+      }, 1000);
+    }
+
+    // ────────────────────────────────────────────
+    // 카드 클릭 핸들러
+    // ────────────────────────────────────────────
+    function onCardClick(e) {
+      if (locked || !gameActive) return;
+      const card = e.currentTarget;
+      if (card.classList.contains('open') || card.classList.contains('matched')) return;
+
+      card.classList.add('open');
+      flippedCards.push(card);
+
+      if (flippedCards.length === 2) {
+        locked = true;
+        moves++;
+        updateMoves();
+        checkMatch();
+      }
+    }
+
+    // ────────────────────────────────────────────
+    // 짝 확인
+    // ────────────────────────────────────────────
+    function checkMatch() {
+      const [a, b] = flippedCards;
+
+      if (a.dataset.emoji === b.dataset.emoji) {
+        // ✅ 매칭 성공
+        a.classList.add('matched');
+        b.classList.add('matched');
+        flippedCards = [];
+        matchedPairs++;
+        updateMatched();
+        locked = false;
+
+        if (matchedPairs === 18) {
+          // 클리어
+          gameActive = false;
+          clearInterval(gameTimer);
+          setStatus('');
+          setBanner(`🎉 CLEAR!  ${moves}회 시도 · ${GAME_SEC - timeLeft}초 소요`, 'clear');
+        }
+      } else {
+        // ❌ 미스 — 0.75초 후 원복
+        setTimeout(() => {
+          a.classList.remove('open');
+          b.classList.remove('open');
+          flippedCards = [];
+          locked = false;
+        }, 750);
+      }
+    }
+
+    // ────────────────────────────────────────────
+    // 게임 타이머
+    // ────────────────────────────────────────────
+    function startGameTimer() {
+      gameTimer = setInterval(() => {
+        timeLeft--;
+        updateTimer();
+
+        if (timeLeft <= 0) {
+          clearInterval(gameTimer);
+          gameActive = false;
+          locked     = true;
+          setStatus('');
+          setBanner('⏰ TIME OVER  —  새 게임을 시작하세요', 'gameover');
+        }
+      }, 1000);
+    }
+
+    // ────────────────────────────────────────────
+    // Service Worker 등록 (PWA)
+    // ────────────────────────────────────────────
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+          console.warn('SW 등록 실패:', err);
+        });
+      });
+    }
+
+    // ────────────────────────────────────────────
+    // 시작 버튼 핸들러
+    // ────────────────────────────────────────────
+    function startGame() {
+      document.getElementById('start-screen').classList.add('hidden');
+      initGame();
+    }
+  </script>
+</body>
+</html>
